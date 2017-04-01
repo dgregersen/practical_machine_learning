@@ -1,0 +1,100 @@
+---
+title: "Activity Prediction"
+author: "dgregersen"
+date: "1/4/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1234)
+```
+
+# Execetive Summary
+This report uses random forests to prodict the manner in which a particular
+exercise was conductd (in the data set this is the 'classe' element). The
+expected out of sample errror is 0.17, ie. we should expect the model to predict
+all 20 final observations correctly.
+The model is cross validated against 40% of the training data set, whereas 60%
+is kept as the base training set.
+
+# Set up
+```{r}
+library(caret)
+library(randomForest)
+
+trainData <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testData <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+loadTrainData <- read.csv(url(trainData), na.strings = c("NA","#DIV/0!",""))
+loadTestData <- read.csv(url(testData), na.strings = c("NA","#DIV/0!",""))
+
+# Data partitioning of the training data
+inTrain <- createDataPartition(loadTrainData$classe, p = .6, list = FALSE)
+TrainingData <- loadTrainData[inTrain,]
+TestingData <- loadTrainData[-inTrain,]
+```
+
+# Data cleaning
+```{r}
+# Removing the first column
+TrainingData <- TrainingData[c(-1)]
+
+# Remving features with high number of NAs
+temp <- TrainingData
+for(i in 1:length(TrainingData)) {
+    if( sum( is.na( TrainingData[, i] ) ) /nrow(TrainingData) >= .6) {
+        for(j in 1:length(temp)) {
+            if( length( grep(names(TrainingData[i]), names(temp)[j]) ) == 1)  {
+                temp <- temp[ , -j]
+            }   
+        } 
+    }
+}
+TrainingData <- temp
+rm(temp)
+
+# Removing variables with little variance (first in Training then in Testing)
+var <- nearZeroVar(TrainingData, saveMetrics=TRUE)
+TrainingData <- TrainingData[,var$nzv==FALSE]
+```
+
+We then apply the same data cleaning to the test data set.
+```{r}
+c1 <- colnames(TrainingData)
+c2 <- colnames(TrainingData[,-58]) # removing the classe feature
+TestingData <- TestingData[c1] # only features that are also in TrainingData
+test <- loadTestData[c2] # only features that are also in TrainingData
+```
+
+We then make sure that the data in training and testing are of the same type.
+```{r}
+for (i in 1:length(test) ) {
+    for(j in 1:length(TrainingData)) {
+        if( length(grep(names(TrainingData[i]), names(test)[j])) == 1) {
+            class(test[j]) <- class(TrainingData[i])
+        }      
+    }      
+}
+
+# To get the same class between testing and myTraining
+test <- rbind(TrainingData[2, -58], test)
+test <- test[-1,]
+```
+
+# Prediction Model using Random Forests
+```{r}
+Model <- randomForest(classe ~ ., data=TrainingData)
+Prediction <- predict(Model, TestingData, type = "class")
+confusion <- confusionMatrix(Prediction, TestingData$classe)
+confusion
+```
+
+Random forests are giving a very good accuracy and the expected out of sample
+error is 100-99.89 = 0.11.
+
+# Applying the model to the test data
+```{r}
+FinalPrediction <- predict(Model, test, type = "class")
+FinalPrediction
+```
